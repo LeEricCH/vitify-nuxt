@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { mergeProps } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { useAuthStore } from '~/stores/auth'
 
 const theme = useTheme()
 const drawer = useState('drawer')
@@ -25,62 +26,120 @@ const isDark = computed({
     theme.global.name.value = v ? 'dark' : 'light'
   },
 })
-const { loggedIn, clear, user } = useUserSession()
-</script>
+const auth = useAuthStore()
+const isLoggedIn = computed(() => auth.isLoggedIn)
+const loading = ref(false)
+const initialLoading = ref(true)
 
+const formatExpiry = (expiry: string | null) => {
+  if (!expiry) return 'N/A'
+  const expiryDate = new Date(expiry)
+  const now = new Date()
+  const diffMs = expiryDate.getTime() - now.getTime()
+  const diffHrs = Math.round(diffMs / 3600000)
+  const diffMins = Math.round(diffMs / 60000)
+
+  if (diffHrs > 24) {
+    return `in ${Math.round(diffHrs / 24)} days`
+  } else if (diffHrs > 0) {
+    return `in ${diffHrs} hours`
+  } else if (diffMins > 0) {
+    return `in ${diffMins} minutes`
+  } else {
+    return 'expiring soon'
+  }
+}
+
+const handleLogout = async () => {
+  loading.value = true
+  try {
+    await auth.logout()
+  } catch (error) {
+    console.error('Logout failed:', error)
+  } finally {
+    loading.value = false
+  }
+}
+
+onMounted(async () => {
+  // Simulate a short delay to allow auth store to initialize
+  await new Promise(resolve => setTimeout(resolve, 100))
+  initialLoading.value = false
+})
+</script>
 <template>
-  <v-app-bar flat>
-    <v-app-bar-nav-icon @click="drawer = !drawer" />
-    <v-breadcrumbs :items="breadcrumbs" />
-    <v-spacer />
-    <div id="app-bar" />
-    <v-switch
-      v-model="isDark"
-      color=""
-      hide-details
-      density="compact"
-      inset
-      false-icon="mdi-white-balance-sunny"
-      true-icon="mdi-weather-night"
-      class="opacity-80"
-    />
-    <v-btn
-      icon
-      href="https://github.com/kingyue737/vitify-nuxt"
-      size="small"
-      class="ml-2"
-      target="_blank"
+  <v-app-bar app>
+    <v-spacer></v-spacer>
+
+    <template v-if="!initialLoading">
+      <v-menu v-if="isLoggedIn" offset-y>
+        <template v-slot:activator="{ props: menuProps }">
+          <v-chip
+            color="primary"
+            v-bind="menuProps"
+            :loading="loading"
+            class="user-chip mr-5"
+          >
+            <v-avatar left>
+              <v-icon>mdi-account-circle</v-icon>
+            </v-avatar>
+            {{ auth.username }}
+          </v-chip>
+        </template>
+        <v-card class="user-menu">
+          <v-list>
+            <v-list-item>
+              <template v-slot:prepend>
+                <v-icon color="primary">mdi-account</v-icon>
+              </template>
+              <v-list-item-title>{{ auth.username }}</v-list-item-title>
+            </v-list-item>
+            <v-list-item>
+              <template v-slot:prepend>
+                <v-icon color="primary">mdi-clock-outline</v-icon>
+              </template>
+              <v-list-item-title>Login Expires <strong>{{ formatExpiry(auth.refreshTokenExpiry) }}</strong></v-list-item-title>
+            </v-list-item>
+            <v-divider></v-divider>
+            <v-list-item @click="handleLogout" class="logout-item">
+              <template v-slot:prepend>
+                <v-icon color="error">mdi-logout</v-icon>
+              </template>
+              <v-list-item-title>Logout</v-list-item-title>
+            </v-list-item>
+          </v-list>
+        </v-card>
+      </v-menu>
+      
+      <v-btn v-else color="primary" @click="$emit('open-login')" class="mr-5">Login</v-btn>
+    </template>
+    <v-chip
+      v-else
+      color="grey"
+      class="user-chip placeholder-chip mr-5"
+      disabled
     >
-      <v-icon size="30" icon="mdi-github" />
-    </v-btn>
-    <v-menu location="bottom">
-      <template #activator="{ props: menu }">
-        <v-tooltip location="bottom">
-          <template #activator="{ props: tooltip }">
-            <v-btn icon v-bind="mergeProps(menu, tooltip)" class="ml-1">
-              <v-icon v-if="!loggedIn" icon="mdi-account-circle" size="36" />
-              <v-avatar v-else color="primary" size="36">
-                <v-img :src="user?.avatar_url" />
-              </v-avatar>
-            </v-btn>
-          </template>
-          <span>{{ loggedIn ? user!.login : 'User' }}</span>
-        </v-tooltip>
-      </template>
-      <v-list>
-        <v-list-item
-          v-if="!loggedIn"
-          title="Login"
-          prepend-icon="mdi-github"
-          href="/api/auth/github"
-        />
-        <v-list-item
-          v-else
-          title="Logout"
-          prepend-icon="mdi-logout"
-          @click="clear"
-        />
-      </v-list>
-    </v-menu>
+      <v-avatar left>
+        <v-icon>mdi-account-circle</v-icon>
+      </v-avatar>
+      Loading...
+    </v-chip>
   </v-app-bar>
 </template>
+
+<style scoped>
+.user-chip {
+  height: 40px;
+  font-size: 16px;
+}
+.user-menu {
+  border-radius: 8px;
+  overflow: hidden;
+}
+.logout-item {
+  color: var(--v-error-base);
+}
+.placeholder-chip {
+  opacity: 0.6;
+}
+</style>

@@ -1,36 +1,58 @@
 <script setup lang="ts">
-const theme = useTheme()
-provide(
-  THEME_KEY,
-  computed(() => (theme.current.value.dark ? 'dark' : undefined)),
-)
-const route = useRoute()
-const title = computed(() => {
-  return route.meta?.title || route.matched[0].meta?.title || ''
+import { ref, onMounted } from 'vue'
+import AppDrawer from '~/components/App/AppDrawer.vue'
+import AppBar from '~/components/App/AppBar.vue'
+import AppFooter from '~/components/App/AppFooter.vue'
+import LoginModal from '~/components/Auth/LoginModal.vue'
+import { useAuthStore } from '~/stores/auth'
+import { Notify } from '~/stores/notification'
+
+const showLogin = ref(false)
+const auth = useAuthStore()
+
+onMounted(() => {
+  const accessToken = localStorage.getItem('access_token')
+  const refreshToken = localStorage.getItem('refresh_token')
+  const accessTokenExpiry = localStorage.getItem('access_token_expiry')
+  const refreshTokenExpiry = localStorage.getItem('refresh_token_expiry')
+  const username = localStorage.getItem('username')
+
+  if (!accessToken || !accessTokenExpiry) {
+    showLogin.value = true
+    Notify.warning('Please log in to access the application.')
+  } else {
+    const now = new Date().getTime()
+    const expiry = new Date(accessTokenExpiry).getTime()
+    if (expiry <= now) {
+      auth.logout()
+      showLogin.value = true
+      Notify.error('Your session has expired. Please log in again.')
+    } else {
+      auth.setAuthData({
+        accessToken,
+        refreshToken: refreshToken || '',
+        accessTokenExpiry,
+        refreshTokenExpiry: refreshTokenExpiry || '',
+        username: username || ''
+      })
+    }
+  }
 })
-useHead({
-  title,
-  titleTemplate: (t) => (t ? `${t} | Vitify Admin` : 'Vitify Admin'),
-  htmlAttrs: { lang: 'en' },
-  link: [{ rel: 'icon', href: '/favicon.ico' }],
-})
-useSeoMeta({
-  viewport: 'width=device-width, initial-scale=1, maximum-scale=1',
-  description: 'Vuetify 3 + Nuxt 3, Opinionated Admin Starter Template',
-  ogImage: '/social-image.png',
-  twitterImage: '/social-image.png',
-  twitterCard: 'summary_large_image',
-})
+
+function onLoginSuccess() {
+  showLogin.value = false
+}
 </script>
 
 <template>
   <v-app>
     <AppDrawer />
-    <AppBar />
+    <AppBar @open-login="showLogin = true" :username="auth.username" /> <!-- Pass username to AppBar -->
     <v-main>
       <NuxtPage />
     </v-main>
     <AppFooter />
+    <LoginModal v-model:isOpen="showLogin" @close="showLogin = false" @loginSuccess="onLoginSuccess" />
   </v-app>
 </template>
 
